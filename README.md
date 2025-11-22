@@ -1,6 +1,6 @@
-# ShellyPro3EM Historian (Node-RED Subflow)
+# ShellyPro3EM Historian (Node-RED)
 
-This is a Node Red script which polls a remote ShellyPro3EM device via MQTT RPC (EMData.GetData / EMData.GetRecords) and writes the history to InfluxDB. 
+This is a Node-RED script which polls a remote ShellyPro3EM device via MQTT RPC (EMData.GetData / EMData.GetRecords) and writes the history to InfluxDB. 
 
 The flow auto-primes (polls) the earliest available data when DB empty or when requests fall outside the device’s stored window. State is auto-on at deploy. Manual prime is supported (for debugging).
 
