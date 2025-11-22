@@ -1,0 +1,910 @@
+[
+    {
+        "id": "e93cd8903d85ed99",
+        "type": "subflow",
+        "name": "Shelly3EM Subflow",
+        "info": "",
+        "category": "",
+        "in": [
+            {
+                "x": 40,
+                "y": 80,
+                "wires": [
+                    {
+                        "id": "2d6d1e36978685e4"
+                    }
+                ]
+            }
+        ],
+        "out": [
+            {
+                "x": 540,
+                "y": 340,
+                "wires": [
+                    {
+                        "id": "80e6661d68efb22b",
+                        "port": 0
+                    }
+                ]
+            },
+            {
+                "x": 400,
+                "y": 680,
+                "wires": [
+                    {
+                        "id": "91622cc3e04e1dfb",
+                        "port": 0
+                    }
+                ]
+            },
+            {
+                "x": 640,
+                "y": 680,
+                "wires": [
+                    {
+                        "id": "130411a4f4bf815e",
+                        "port": 1
+                    }
+                ]
+            },
+            {
+                "x": 340,
+                "y": 520,
+                "wires": [
+                    {
+                        "id": "b2a-getrecords-builder",
+                        "port": 0
+                    }
+                ]
+            },
+            {
+                "x": 400,
+                "y": 820,
+                "wires": [
+                    {
+                        "id": "b4a-getrecords-in",
+                        "port": 0
+                    }
+                ]
+            },
+            {
+                "x": 700,
+                "y": 760,
+                "wires": [
+                    {
+                        "id": "31f804378cd4280d",
+                        "port": 0
+                    }
+                ]
+            },
+            {
+                "x": 420,
+                "y": 120,
+                "wires": [
+                    {
+                        "id": "2d6d1e36978685e4",
+                        "port": 2
+                    }
+                ]
+            }
+        ],
+        "env": [
+            {
+                "name": "SHELLY_ID",
+                "type": "str",
+                "value": ""
+            },
+            {
+                "name": "MQTT_PREFIX",
+                "type": "str",
+                "value": ""
+            },
+            {
+                "name": "MQTT_GETDATA_SRC",
+                "type": "str",
+                "value": "emdata-getdata"
+            },
+            {
+                "name": "MQTT_GETDATA_TOPIC",
+                "type": "str",
+                "value": "emdata-getdata/rpc"
+            },
+            {
+                "name": "MQTT_GETRECORDS_SRC",
+                "type": "str",
+                "value": "emdata-getrecords"
+            },
+            {
+                "name": "MQTT_GETRECORDS_TOPIC",
+                "type": "str",
+                "value": "emdata-getrecords/rpc"
+            },
+            {
+                "name": "INFLUX_DB",
+                "type": "str",
+                "value": "shelly_em"
+            },
+            {
+                "name": "INFLUX_MEASUREMENT",
+                "type": "str",
+                "value": "energy"
+            },
+            {
+                "name": "PRIME_THRESHOLD_MIN",
+                "type": "num",
+                "value": "5"
+            }
+        ],
+        "meta": {},
+        "color": "#DDAA99",
+        "status": {
+            "x": 320,
+            "y": 80,
+            "wires": [
+                {
+                    "id": "2d6d1e36978685e4",
+                    "port": 1
+                }
+            ]
+        }
+    },
+    {
+        "id": "5cc38e248810d0c2",
+        "type": "influxdb in",
+        "z": "e93cd8903d85ed99",
+        "g": "0b592e8527ce70fa",
+        "influxdb": "",
+        "name": "query influxdb",
+        "query": "",
+        "rawOutput": false,
+        "precision": "s",
+        "retentionPolicy": "",
+        "org": "organisation",
+        "x": 400,
+        "y": 200,
+        "wires": [
+            [
+                "8fcc630dc018ddac"
+            ]
+        ],
+        "info": "Queries last time stamp from DB."
+    },
+    {
+        "id": "8fcc630dc018ddac",
+        "type": "function",
+        "z": "e93cd8903d85ed99",
+        "g": "0b592e8527ce70fa",
+        "name": "set last/next ts",
+        "func": "// Set last / next ts\n\n// 'Prime' CP1: Influx DB Empty / No Results\nif (!Array.isArray(msg.payload) || !msg.payload[0]?.time) {\n    node.warn(\"DB returned no rows — triggering prime\");\n    msg.primeReason = \"dbEmpty\";\n    // stop normal flow, proceed to 'prime' flow\n    return [null, msg];\n}\n\n// Normal collection flow — at least one row exists\nconst time = msg.payload[0].time;\nconst ts = Math.floor(new Date(time).getTime() / 1000) + 60; // align to next minute\n\n// set flow vars (unix seconds)\nflow.set(\"dbLastTs\", ts);\nflow.set(\"nextRecordTs\", ts + 60);\n\n// seed last received timestamp for lag sensor\nflow.set(\"history.lastReceivedIso\", new Date(ts * 1000).toISOString());\n\n// keep msg.payload for the next step (start ts)\nmsg.payload = ts;\nreturn [msg, null];",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 660,
+        "y": 200,
+        "wires": [
+            [
+                "8f5daaf25e2f056e"
+            ],
+            [
+                "b2a-getrecords-builder"
+            ]
+        ],
+        "info": "Set flow vars 'db_last_ts' and 'next_record_ts' as unix timestamps."
+    },
+    {
+        "id": "50547f4cf684208c",
+        "type": "function",
+        "z": "e93cd8903d85ed99",
+        "g": "0b592e8527ce70fa",
+        "name": "msg.query",
+        "func": "// Stop if flow.state not 'true'\nif (!flow.get('state')) return null;\n\nconst cfg = flow.get(\"cfg\");\n\nmsg.query = `SELECT last(a_total_act_energy), time\nFROM \"${cfg.influx.db}\".\"autogen\".\"${cfg.influx.measurement}\"\nWHERE \"device\" = '${cfg.shellyId}'`;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 170,
+        "y": 200,
+        "wires": [
+            [
+                "5cc38e248810d0c2"
+            ]
+        ]
+    },
+    {
+        "id": "8f5daaf25e2f056e",
+        "type": "function",
+        "z": "e93cd8903d85ed99",
+        "g": "0dd552d5cbdc4ef7",
+        "name": "request getdata",
+        "func": "\n// request getdata\n\n// Note: if 'end_ts' is not defined in MQTT payload, then result \n// will contain 'next_record_ts'(if more recent records exist)\n\n// Start and end time\nconst startTime = msg.startTime ?? msg.payload;\nconst endTime = msg.endTime ?? null;\n\n// Config\nconst cfg = flow.get(\"cfg\");\n\n// Build MQTT payload\nvar mqttPayload = {\n    id: 1,\n    src: cfg.mqtt.getDataSrc,\n    method: \"EMData.GetData\",\n    params: {\n        id: 0,\n        ts: startTime,\n        end_ts: endTime\n    }\n};\nmsg.payload = mqttPayload;\n\n// MQTT Topic\nmsg.topic = cfg.mqtt.rpcTopic;\n\nreturn msg;\n\n// Unix converter\n// https://www.site24x7.com/tools/time-stamp-converter.html\n\n// Start Date Example - UTC\n// 2024-01-01 00 00 00 = 1704096000\n\n// End Data Sample Calc\n// +1 day = 60 * 60 * 24 = 86400\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 180,
+        "y": 340,
+        "wires": [
+            [
+                "80e6661d68efb22b"
+            ]
+        ]
+    },
+    {
+        "id": "3c77ce35129fa1a4",
+        "type": "mqtt out",
+        "z": "e93cd8903d85ed99",
+        "g": "de7de3a8a5734b96",
+        "name": "shellyId/rpc",
+        "topic": "",
+        "qos": "0",
+        "retain": "false",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "",
+        "x": 670,
+        "y": 420,
+        "wires": []
+    },
+    {
+        "id": "80e6661d68efb22b",
+        "type": "interval-length",
+        "z": "e93cd8903d85ed99",
+        "g": "0dd552d5cbdc4ef7",
+        "format": "mills",
+        "bytopic": false,
+        "minimum": "",
+        "maximum": "",
+        "window": "",
+        "timeout": false,
+        "msgTimeout": "30",
+        "minimumunit": "msecs",
+        "maximumunit": "msecs",
+        "windowunit": "msecs",
+        "msgTimeoutUnit": "secs",
+        "reset": false,
+        "startup": true,
+        "msgField": "interval",
+        "timestampField": "timestamp",
+        "repeatTimeout": true,
+        "name": "repeat 30s",
+        "x": 370,
+        "y": 340,
+        "wires": [
+            [
+                "3c77ce35129fa1a4"
+            ],
+            [
+                "50547f4cf684208c"
+            ]
+        ]
+    },
+    {
+        "id": "130411a4f4bf815e",
+        "type": "function",
+        "z": "e93cd8903d85ed99",
+        "g": "5a5db6d54452c58b",
+        "name": "parse rpc for db",
+        "func": "// Parse GetData RPC result with CP2 prime logic\n\n// Config (primeThreshold in minutes, validated by controller)\nconst cfg = flow.get('cfg') || {};\nconst primeThreshold = Number(cfg.primeThreshold);\n\n// Helpers (seconds)\nconst now = () => Math.floor(Date.now() / 1000);\n\n// Defensive: malformed / error payloads → do NOT prime here\nif (!msg || !msg.payload) return [null, null, null];\nif (msg.payload.error) {\n    node.warn(`RPC error: ${JSON.stringify(msg.payload.error)}`);\n    return [null, null, null];\n}\n\nconst result = msg.payload.result;\nif (!result) return [null, null, null];\n\nconst keys = result.keys;\nconst block = Array.isArray(result.data) ? result.data[0] : undefined;\nconst nextRecordTs = Number(result.next_record_ts); // seconds or NaN\n\n// Case A: No data in this reply\nif (!block) {\n    // A1) Device tells us where to start: empty + next_record_ts present\n    if (Number.isFinite(nextRecordTs)) {\n        return [{ payload: nextRecordTs }, null, null];\n    }\n\n    // A2) Empty AND no next_record_ts → possible \"outside device window\"\n    const dbLastTs = Number(flow.get('dbLastTs')) || 0;\n    const gap = now() - dbLastTs; // seconds\n\n    if (gap >= primeThreshold * 60) {\n        const primeMsg = { payload: 0, primeReason: 'noDataNoNext' };\n        return [null, null, primeMsg];\n    } else {\n        // Near real-time; do not prime\n        return [null, null, null];\n    }\n}\n\n// Case B: Data present\nconst timestamp = Number(block.ts);     // epoch seconds\nconst period = Number(block.period); // seconds per sample\nconst values = Array.isArray(block.values) ? block.values : [];\n\n// Build Influx points\nconst measurement = cfg.influx.measurement;\nconst tags = { device: cfg.shellyId, period };\n\nconst influxData = [];\nfor (let i = 0; i < values.length; i++) {\n    const row = values[i];\n    const fields = {};\n    for (let j = 0; j < row.length; j++) {\n        fields[keys[j]] = row[j];\n    }\n    influxData.push({\n        measurement,\n        fields,\n        tags,\n        timestamp: timestamp + (i * period) // seconds\n    });\n}\n\n// End of this batch at the device\nconst sampleCount = values.length;\nconst lastBatchEndTs = timestamp + ((sampleCount - 1) * period);\n\n// Update history mirrors (ISO) + flags\nflow.set(\"history.dbLastIso\", new Date(lastBatchEndTs * 1000).toISOString());\nif (Number.isFinite(nextRecordTs)) {\n    flow.set(\"history.downloading\", true);\n    flow.set(\"history.shellyLatestIso\", new Date((nextRecordTs - period) * 1000).toISOString());\n} else {\n    flow.set(\"history.downloading\", false);\n    flow.set(\"history.shellyLatestIso\", new Date(lastBatchEndTs * 1000).toISOString());\n}\n\n// Advance dbLastTs (epoch) so the freshness guard is meaningful next time\nflow.set(\"dbLastTs\", lastBatchEndTs);\n\n// Outputs:\n// [0] next start ts (when next_record_ts present)\n// [1] points for Influx\n// [2] prime trigger (unused in data-present path)\nif (Number.isFinite(nextRecordTs)) {\n    return [{ payload: nextRecordTs }, { payload: influxData }, null];\n} else {\n    return [null, { payload: influxData }, null];\n}",
+        "outputs": 3,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 440,
+        "y": 620,
+        "wires": [
+            [
+                "8f5daaf25e2f056e"
+            ],
+            [
+                "9709f21de5545afe"
+            ],
+            [
+                "b2a-getrecords-builder"
+            ]
+        ]
+    },
+    {
+        "id": "9709f21de5545afe",
+        "type": "influxdb batch",
+        "z": "e93cd8903d85ed99",
+        "g": "5a5db6d54452c58b",
+        "influxdb": "",
+        "precision": "s",
+        "retentionPolicy": "autogen",
+        "name": "save influxdb",
+        "database": "database",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "organisation",
+        "bucket": "bucket",
+        "x": 670,
+        "y": 620,
+        "wires": []
+    },
+    {
+        "id": "91622cc3e04e1dfb",
+        "type": "mqtt in",
+        "z": "e93cd8903d85ed99",
+        "g": "5a5db6d54452c58b",
+        "name": "response getdata/rpc",
+        "topic": "$(MQTT_GETDATA_TOPIC)",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 200,
+        "y": 620,
+        "wires": [
+            [
+                "130411a4f4bf815e"
+            ]
+        ]
+    },
+    {
+        "id": "b2a-getrecords-builder",
+        "type": "function",
+        "z": "e93cd8903d85ed99",
+        "g": "5330e27c4d268e77",
+        "name": "request getrecords",
+        "func": "// get config\nconst cfg = flow.get('cfg');\n\n// MQTT payload\nmsg.payload = {\n    id: 1,\n    src: cfg.mqtt.getRecordsSrc,\n    method: \"EMData.GetRecords\",\n    params: {\n        id: 0,\n        ts: 0\n    }\n};\n\n// MQTT topic\nmsg.topic = cfg.mqtt.rpcTopic;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 190,
+        "y": 480,
+        "wires": [
+            [
+                "3c77ce35129fa1a4"
+            ]
+        ]
+    },
+    {
+        "id": "b4a-getrecords-in",
+        "type": "mqtt in",
+        "z": "e93cd8903d85ed99",
+        "g": "6091efc7ac15219a",
+        "name": "reponse getrecords/rpc",
+        "topic": "$(MQTT_GETRECORDS_TOPIC)",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 200,
+        "y": 760,
+        "wires": [
+            [
+                "31f804378cd4280d"
+            ]
+        ]
+    },
+    {
+        "id": "31f804378cd4280d",
+        "type": "function",
+        "z": "e93cd8903d85ed99",
+        "g": "6091efc7ac15219a",
+        "name": "parse rpc for earliest ts",
+        "func": "// Parse GetRecords → earliest device timestamp (seconds)\nconst result = msg?.payload?.result;\nconst blocks = result?.data_blocks;\n\nif (Array.isArray(blocks) && blocks.length > 0 && Number.isFinite(blocks[0].ts)) {\n    const shellyEarliestTs = Number(blocks[0].ts);\n\n    // Update monitor field for HA (ISO for readability)\n    flow.set(\"history.shellyEarliestIso\", new Date(shellyEarliestTs * 1000).toISOString());\n\n    // Safety valve: if DB is already at/after earliest, skip priming\n    const dbLastTs = Number(flow.get(\"dbLastTs\")) || 0;\n    const slop = 120; // seconds\n\n    if (dbLastTs >= (shellyEarliestTs - slop)) {\n        node.status({ fill: \"grey\", shape: \"ring\", text: \"prime skipped (already at earliest)\" });\n\n        // Persist a record of the skip with a timestamp\n        const recordedAtTs = Math.floor(Date.now() / 1000);\n        flow.set(\"history.lastPrimeInfo\", {\n            reason: \"alreadyAtEarliest\",\n            shellyEarliestTs,\n            dbLastTs,\n            recordedAtTs,\n            recordedAtIso: new Date(recordedAtTs * 1000).toISOString()\n        });\n\n        return null;\n    }\n\n    // Proceed: forward earliest to GetData path (raw epoch), and persist context\n    msg.payload = shellyEarliestTs;\n\n    const recordedAtTs = Math.floor(Date.now() / 1000);\n    const primeReason = msg.primeReason || \"prime\"; // preserve upstream reason if set\n\n    // Ephemeral on message (for immediate downstream visibility)\n    msg.primeInfo = { reason: primeReason, shellyEarliestTs, dbLastTs, recordedAtTs };\n\n    // Durable record in flow context\n    flow.set(\"history.lastPrimeInfo\", {\n        reason: primeReason,\n        shellyEarliestTs,\n        dbLastTs,\n        recordedAtTs,\n        recordedAtIso: new Date(recordedAtTs * 1000).toISOString()\n    });\n\n    return msg;\n}\n\nnode.warn(\"GetRecords: no valid data_blocks\");\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 490,
+        "y": 760,
+        "wires": [
+            [
+                "8f5daaf25e2f056e"
+            ]
+        ]
+    },
+    {
+        "id": "2d6d1e36978685e4",
+        "type": "function",
+        "z": "e93cd8903d85ed99",
+        "name": "Controller",
+        "func": "// ENV\nconst shellyId              = env.get(\"SHELLY_ID\");\nconst mqttPrefix            = env.get(\"MQTT_PREFIX\");   // optional\nconst getDataSrc            = env.get(\"MQTT_GETDATA_SRC\");\nconst getDataTopic          = env.get(\"MQTT_GETDATA_TOPIC\");\nconst getRecordsSrc         = env.get(\"MQTT_GETRECORDS_SRC\");\nconst getRecordsTopic       = env.get(\"MQTT_GETRECORDS_TOPIC\");\nconst influxDb              = env.get(\"INFLUX_DB\");\nconst measurement           = env.get(\"INFLUX_MEASUREMENT\");\nconst primeThreshold        = env.get(\"PRIME_THRESHOLD_MIN\");\n\n// Validate shellyId\nif (!shellyId) {\n    const msgText = \"SHELLY_ID not defined\";\n    node.error(msgText);\n    // Status\n    node.send([null, { status: { fill: \"red\", shape: \"ring\", text: msgText } }]);\n    return null;\n}\n\n// Build config\nconst cfg = {\n    shellyId,\n    mqtt: {\n        rpcTopic: mqttPrefix ? `${mqttPrefix}/${shellyId}/rpc` : `${shellyId}/rpc`,\n        getDataSrc,\n        getDataTopic,\n        getRecordsSrc,\n        getRecordsTopic,\n    },\n    influx: {\n        db: influxDb,\n        measurement,\n    },\n    primeThreshold: primeThreshold >= 2 ? primeThreshold : 2,\n};\nflow.set('cfg', cfg);\n\n// (Optional) expose cfg on msg for reference/debugging\nmsg.cfg = cfg;\n\n\n// 'Action' Control Gate\nif (msg.action === 'prime') {\n    delete msg.action;\n    msg.primeReason = 'manual';\n    return [null, null, msg];\n}\n\n// 'State' Control Gate\nflow.set('state', true);                // auto-on by default\nif (typeof msg.state === 'boolean') {\n    flow.set('state', msg.state);       // override if explicitly set\n    delete msg.state;\n}\n\n// Update status\nconst state = flow.get('state') ?? true;\nnode.send([null, {\n    status: {\n        fill: state ? \"green\" : \"grey\",\n        shape: \"dot\",\n        text: state ? `RPC ${cfg.mqtt.rpcTopic}` : \"state: off\"\n    }\n}]);\n\n// If state is false (aka 'off') stop here\nif (!state) return null;\n\n// Otherwise continue\nreturn [msg, null];",
+        "outputs": 3,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 160,
+        "y": 80,
+        "wires": [
+            [
+                "50547f4cf684208c"
+            ],
+            [],
+            [
+                "b2a-getrecords-builder"
+            ]
+        ]
+    },
+    {
+        "id": "0dd552d5cbdc4ef7",
+        "type": "group",
+        "z": "e93cd8903d85ed99",
+        "name": "'collection' request flow",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "8f5daaf25e2f056e",
+            "80e6661d68efb22b"
+        ],
+        "x": 74,
+        "y": 299,
+        "w": 392,
+        "h": 82
+    },
+    {
+        "id": "0b592e8527ce70fa",
+        "type": "group",
+        "z": "e93cd8903d85ed99",
+        "name": "query db for last timestamp",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "5cc38e248810d0c2",
+            "8fcc630dc018ddac",
+            "50547f4cf684208c"
+        ],
+        "x": 74,
+        "y": 159,
+        "w": 692,
+        "h": 82
+    },
+    {
+        "id": "6091efc7ac15219a",
+        "type": "group",
+        "z": "e93cd8903d85ed99",
+        "name": "'prime' response ",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "31f804378cd4280d",
+            "b4a-getrecords-in"
+        ],
+        "x": 74,
+        "y": 719,
+        "w": 552,
+        "h": 82
+    },
+    {
+        "id": "5330e27c4d268e77",
+        "type": "group",
+        "z": "e93cd8903d85ed99",
+        "name": "'prime' request flow",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "b2a-getrecords-builder"
+        ],
+        "x": 74,
+        "y": 439,
+        "w": 232,
+        "h": 82
+    },
+    {
+        "id": "5a5db6d54452c58b",
+        "type": "group",
+        "z": "e93cd8903d85ed99",
+        "name": "'collection' response ",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "130411a4f4bf815e",
+            "9709f21de5545afe",
+            "91622cc3e04e1dfb"
+        ],
+        "x": 74,
+        "y": 571.5,
+        "w": 692,
+        "h": 97
+    },
+    {
+        "id": "de7de3a8a5734b96",
+        "type": "group",
+        "z": "e93cd8903d85ed99",
+        "name": "/rpc request",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "3c77ce35129fa1a4"
+        ],
+        "x": 574,
+        "y": 379,
+        "w": 192,
+        "h": 82
+    },
+    {
+        "id": "389a234e9acc1f45",
+        "type": "tab",
+        "label": "ShellyPro3EM Historian",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "0d4f805d760f7536",
+        "type": "group",
+        "z": "389a234e9acc1f45",
+        "name": "'Collection'",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "e84d28077ca4feaf",
+            "a71bb4f99269d4bb",
+            "90f33605c5386d84"
+        ],
+        "x": 774,
+        "y": 159,
+        "w": 102,
+        "h": 162
+    },
+    {
+        "id": "fe17a84759de27bb",
+        "type": "group",
+        "z": "389a234e9acc1f45",
+        "name": "'Pime'",
+        "style": {
+            "label": true
+        },
+        "nodes": [
+            "bc1cad27f2f19a86",
+            "494ec3a7ad56f953",
+            "5fcf47573dcb30e4"
+        ],
+        "x": 774,
+        "y": 339,
+        "w": 102,
+        "h": 162
+    },
+    {
+        "id": "c8116e888cf6cc81",
+        "type": "comment",
+        "z": "389a234e9acc1f45",
+        "name": "ShellyPro3EM Historian",
+        "info": "See README for more info.",
+        "x": 160,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "728461bf2e2399f7",
+        "type": "inject",
+        "z": "389a234e9acc1f45",
+        "name": "on",
+        "props": [
+            {
+                "p": "state",
+                "v": "true",
+                "vt": "bool"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 150,
+        "y": 300,
+        "wires": [
+            [
+                "305455c0ab3e77bb"
+            ]
+        ],
+        "info": "Sets the intial flow state to 'on'. \n\nAuto-triggered after 0.1s."
+    },
+    {
+        "id": "a2dc67ca5b8c4747",
+        "type": "inject",
+        "z": "389a234e9acc1f45",
+        "name": "off",
+        "props": [
+            {
+                "p": "state",
+                "v": "false",
+                "vt": "bool"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 150,
+        "y": 340,
+        "wires": [
+            [
+                "305455c0ab3e77bb"
+            ]
+        ],
+        "info": "Set the flow state to 'off'.\n\nManually triggered by clicking on node."
+    },
+    {
+        "id": "305455c0ab3e77bb",
+        "type": "change",
+        "z": "389a234e9acc1f45",
+        "name": "Set state",
+        "rules": [
+            {
+                "t": "set",
+                "p": "state",
+                "pt": "flow",
+                "to": "state",
+                "tot": "msg"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 360,
+        "y": 300,
+        "wires": [
+            [
+                "b0fd066382d80c82",
+                "38de473e1c37cb6f"
+            ]
+        ],
+        "info": "Sets the flow state to on/off (boolean).\n\n- Set flow.state for main flow. \n- Pass msg.state to subflow.\n"
+    },
+    {
+        "id": "e330e13fdc129231",
+        "type": "comment",
+        "z": "389a234e9acc1f45",
+        "name": "TODO",
+        "info": "\n- HA Shelly3EM History sensor\n    - finish build\n    - add status (i.e. up-to-date, downloading, lagged)\n    - send notification when lagged\n\n- Subflow\n    - set default poll interval to 60s (currently 30s)\n    - 30s better for debugging (less wait)\n    - 60s better for deployment (less churn)",
+        "x": 250,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "38de473e1c37cb6f",
+        "type": "subflow:e93cd8903d85ed99",
+        "z": "389a234e9acc1f45",
+        "name": "",
+        "x": 590,
+        "y": 320,
+        "wires": [
+            [
+                "e84d28077ca4feaf"
+            ],
+            [
+                "a71bb4f99269d4bb"
+            ],
+            [
+                "90f33605c5386d84"
+            ],
+            [
+                "bc1cad27f2f19a86"
+            ],
+            [
+                "494ec3a7ad56f953"
+            ],
+            [
+                "5fcf47573dcb30e4"
+            ],
+            [
+                "a243d85fc2999e4c"
+            ]
+        ]
+    },
+    {
+        "id": "e84d28077ca4feaf",
+        "type": "debug",
+        "z": "389a234e9acc1f45",
+        "g": "0d4f805d760f7536",
+        "name": "request getdata",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 815,
+        "y": 200,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "b0fd066382d80c82",
+        "type": "debug",
+        "z": "389a234e9acc1f45",
+        "name": "complete msg object",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 455,
+        "y": 220,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "a71bb4f99269d4bb",
+        "type": "debug",
+        "z": "389a234e9acc1f45",
+        "g": "0d4f805d760f7536",
+        "name": "response getdata",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 815,
+        "y": 240,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "90f33605c5386d84",
+        "type": "debug",
+        "z": "389a234e9acc1f45",
+        "g": "0d4f805d760f7536",
+        "name": "parse getdata",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 815,
+        "y": 280,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "bc1cad27f2f19a86",
+        "type": "debug",
+        "z": "389a234e9acc1f45",
+        "g": "fe17a84759de27bb",
+        "name": "request getrecords",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 815,
+        "y": 380,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "494ec3a7ad56f953",
+        "type": "debug",
+        "z": "389a234e9acc1f45",
+        "g": "fe17a84759de27bb",
+        "name": "response getrecords",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 815,
+        "y": 420,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "5fcf47573dcb30e4",
+        "type": "debug",
+        "z": "389a234e9acc1f45",
+        "g": "fe17a84759de27bb",
+        "name": "parse getrecords",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 815,
+        "y": 460,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "a243d85fc2999e4c",
+        "type": "debug",
+        "z": "389a234e9acc1f45",
+        "name": "complete msg object",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 815,
+        "y": 540,
+        "wires": [],
+        "l": false
+    },
+    {
+        "id": "5e49ce3f426cb05a",
+        "type": "inject",
+        "z": "389a234e9acc1f45",
+        "name": "Manual Prime (for testing/debug)",
+        "props": [
+            {
+                "p": "action",
+                "v": "prime",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "x": 230,
+        "y": 440,
+        "wires": [
+            [
+                "38de473e1c37cb6f"
+            ]
+        ],
+        "info": "**Triggers a 'prime' of the data collection subflow.**\n\n'Prime' is an action that retrieves the earliest \ndata timestamp from Shelly device and uses that value  \nas the next timestamp for retrieval of data.\n\nWarning: This can overwrite existing data that has \nalready been collected for the same time period, if not\nused carefully.\n\nRecommend letting the subflow initiate it's own\nautomated priming system, which requires no action."
+    },
+    {
+        "id": "3627a3ceadcfd81c",
+        "type": "comment",
+        "z": "389a234e9acc1f45",
+        "name": "README",
+        "info": "ShellyPro3EM Historian (Node-RED Subflow)\n\nPolls Shelly Pro 3EM via MQTT RPC (EMData.GetData / EMData.GetRecords) and writes history to InfluxDB.\nAuto-primes the DB when empty or when requests fall outside the device’s stored window.\nState is auto-on at deploy. Manual prime is supported (mainly for debugging).\n\nSetup\n1) Open the subflow and configure the MQTT broker and the InfluxDB connection nodes.\n2) From the main flow, click the subflow instance to set the ENV vars below.\n3) Deploy. The controller auto-enables state. Use 'manual prime' for debugging if needed (does affect off/on state).\n\nENV vars (set on the subflow instance)\nSHELLY_ID                Device ID (e.g. shellypro3em-XXXX). Used in tags and for \"<deviceId>/rpc\".\nMQTT_PREFIX              Optional prefix before deviceId in the Shelly RPC topic. Empty = \"<deviceId>/rpc\".\nMQTT_GETDATA_SRC         \"src\" string for GetData requests (e.g. emdata-getdata).\nMQTT_GETDATA_TOPIC       MQTT topic for GetData responses (e.g. emdata-getdata/rpc).\nMQTT_GETRECORDS_SRC      \"src\" string for GetRecords requests (e.g. emdata-getrecords).\nMQTT_GETRECORDS_TOPIC    MQTT topic for GetRecords responses (e.g. emdata-getrecords/rpc).\nINFLUX_DB                InfluxDB database name (e.g. shelly_em).\nINFLUX_MEASUREMENT       Influx measurement (e.g. energy).\nPRIME_THRESHOLD_MIN      Minutes since dbLastTs required before auto-prime (default 5, minimum 2).\n\nHow it works\n• On start, queries Influx for the last timestamp (CP1). If none, triggers GetRecords (prime).\n• Normal path: GetData → write points to Influx → advance dbLastTs → loop on interval.\n• (CP2) If GetData returns no data and no next_record_ts, and (now - dbLastTs) >= PRIME_THRESHOLD_MIN, trigger GetRecords.\n• Safety valve: After GetRecords, if dbLastTs >= device’s earliest ts (±120s), skip priming.\n\nControl\n• State toggle: send msg.state = true/false to the subflow input (default is true at deploy).\n• Manual prime: send msg.action = \"prime\" (does not change state).\n• For debugging, enable debug nodes on main flow.\n\nContext / diagnostics (flow context: history.*)\nhistory.dbLastIso         ISO mirror of last DB timestamp written.\nhistory.shellyLatestIso   ISO mirror of device’s latest known timestamp.\nhistory.shellyEarliestIso ISO mirror of device’s earliest known timestamp.\nhistory.downloading       Boolean flag while catching up.\nhistory.lastPrimeInfo     { reason, shellyEarliestTs, dbLastTs, recordedAtTs, recordedAtIso }\n\nNotes\n• Loop cadence is controlled by the interval-length node in the subflow (default 30s).\n• Influx retention policy assumed autogen/infinite; adjust on DB if desired.\n• When sharing this flow, replace broker/DB configs or use placeholders.",
+        "x": 120,
+        "y": 140,
+        "wires": []
+    }
+]
